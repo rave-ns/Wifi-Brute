@@ -1,17 +1,15 @@
 # 📡 Wi-Fi Brute Force Tool
 
-![Wi-Fi Brute Force]
+![Wi-Fi Brute Force](https://github.com/user-attachments/assets/cc91ba6c-d161-4674-a04d-70fadc917ca2)
 
-![image](https://github.com/user-attachments/assets/5bc1de78-52ae-44e4-bbeb-1430e1723cdb)
-
-
-[![Telegram](https://img.shields.io/badge/Telegram-Group-blue)](https://t.me/yourgroup) [![GitHub](https://img.shields.io/badge/GitHub-Repo-black)](https://github.com/rave-ns/Wifi_Brute)
+[![Telegram](https://img.shields.io/badge/Telegram-Group-blue)](https://t.me/yourgroup) 
+[![GitHub](https://img.shields.io/badge/GitHub-Repo-black)](https://github.com/rave-ns/Wifi_Brute)
 
 ---
 
 ## ⚠️ DISCLAIMER ⚠️
-
 🚨 **FOR EDUCATIONAL & LEGAL USE ONLY!** 🚨  
+
 This tool is intended for **authorized penetration testing** and **security research**. **Do not** use it on networks you don't own or have explicit permission to test. Unauthorized access is illegal and may result in severe legal consequences.
 
 ---
@@ -43,14 +41,12 @@ This tool is intended for **authorized penetration testing** and **security rese
 ## 🚀 Installation
 
 Clone the repository and navigate to the project directory:
-
 ```bash
 git clone https://github.com/rave-ns/Wifi_Brute.git
 cd Wifi_Brute
 ```
 
 Run the script:
-
 ```bash
 python wifi_brute.py
 ```
@@ -87,7 +83,6 @@ This tool is strictly for **educational and penetration testing purposes only**.
 ## 🌐 Connect with Us
 
 📢 **Join our community for updates and discussions:**
-
 - 📡 **Telegram:** [Join Now](https://t.me/yourgroup)
 - 🖥️ **GitHub:** [Project Page](https://github.com/rave-ns/Wifi_Brute)
 
