@@ -28,6 +28,7 @@
 - 🐍 **Python 3.7+**
 - 🛡️ **Administrator/root privileges**  
   - Windows: Run the script in an elevated Command Prompt as Admin Important
+  - get some passwords list to check wifi pass as passwords.txt
   - Linux: Run with `sudo`
 - 📶 **Compatible Wi-Fi adapter** in proper mode (standard mode for pywifi)
 - 📚 **Dependencies:**
