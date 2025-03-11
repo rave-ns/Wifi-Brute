@@ -2,8 +2,8 @@
 
 ![Wi-Fi Brute Force](https://github.com/user-attachments/assets/cc91ba6c-d161-4674-a04d-70fadc917ca2)
 
-[![Telegram](https://img.shields.io/badge/Telegram-Group-blue)](https://t.me/yourgroup) 
-[![GitHub](https://img.shields.io/badge/GitHub-Repo-black)](https://github.com/rave-ns/Wifi_Brute)
+[![Telegram](https://img.shields.io/badge/Telegram-Group-blue)](https://t.me/Asqlan) 
+[![GitHub](https://img.shields.io/badge/GitHub-Repo-black)]([https://github.com/rave-ns/Wifi_Brute](https://github.com/rave-ns/Wifi_Brute))
 
 ---
 
@@ -42,13 +42,13 @@ This tool is intended for **authorized penetration testing** and **security rese
 
 Clone the repository and navigate to the project directory:
 ```bash
-git clone https://github.com/rave-ns/Wifi_Brute.git
+git clone https://github.com/rave-ns/Wifi_Brute
 cd Wifi_Brute
 ```
 
 Run the script:
 ```bash
-python wifi_brute.py
+python ravens.py
 ```
 
 ---
