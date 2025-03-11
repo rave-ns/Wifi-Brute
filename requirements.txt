@@ -1,0 +1,9 @@
+# Core dependencies
+pywifi>=1.1.12
+rich>=10.0.0
+
+# Windows-specific dependencies
+comtypes>=1.1.10; platform_system=="Windows"
+
+# Optional but recommended
+colorama>=0.4.4
