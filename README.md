@@ -83,7 +83,7 @@ This tool is strictly for **educational and penetration testing purposes only**.
 ## 🌐 Connect with Us
 
 📢 **Join our community for updates and discussions:**
-- 📡 **Telegram:** [Join Now](https://t.me/yourgroup)
+- 📡 **Telegram:** [Contact](https://t.me/yourgroup)
 - 🖥️ **GitHub:** [Project Page](https://github.com/rave-ns/Wifi_Brute)
 
 ---
