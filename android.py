@@ -164,7 +164,7 @@ class WiFiScanner:
                 f.write(f"{attempt_key}\n")
         except Exception:
             pass
-    def scan_networks(self) -> List:
+    def scan_networks(self):
         if self.android_wifi:
             return self.scan_android_wifi()
         if not self.interface:
@@ -215,6 +215,7 @@ class WiFiScanner:
             self.wifi_manager.startScan()
             time.sleep(4)
             results = self.wifi_manager.getScanResults()
+            self.log(f"Android scan results: {results}")
             networks = []
             for result in results.toArray():
                 ssid = result.SSID
@@ -224,11 +225,12 @@ class WiFiScanner:
                 net.ssid = ssid if ssid and ssid.strip() != "" else f"<Hidden Network: {bssid}>"
                 net.signal = level
                 networks.append(net)
+            self.log(f"Found {len(networks)} networks on Android")
             return networks
         except Exception as e:
             self.log("Error scanning Android WiFi: " + str(e))
             return []
-    def test_password(self, network, password, timeout=TIMEOUT_SECONDS) -> bool:
+    def test_password(self, network, password, timeout=TIMEOUT_SECONDS):
         if self.android_wifi:
             self.log("Password testing is not supported on Android.")
             return False
@@ -312,7 +314,7 @@ class WiFiScanner:
             except Exception:
                 pass
             return False
-    def crack_network(self, network, passwords: List[str], progress_callback=None):
+    def crack_network(self, network, passwords, progress_callback=None):
         if self.android_wifi:
             self.log("Cracking is not supported on Android.")
             return False, None
@@ -364,11 +366,13 @@ class NetworkItem(BoxLayout):
         Animation(opacity=1, duration=0.5).start(self)
     def on_checkbox_active(self, checkbox, value):
         self.selected = value
-    def set_status(self, status, success=False):
+    def set_status(self, status, success=False, in_progress=False):
         self.status = status
         self.status_label.text = status
         if success:
             self.status_label.color = get_color_from_hex(Colors.GREEN)
+        elif in_progress:
+            self.status_label.color = get_color_from_hex(Colors.YELLOW)
         else:
             self.status_label.color = get_color_from_hex(Colors.GRAY)
 
@@ -479,10 +483,20 @@ class WiFiCrackApp(App):
         if "ANDROID_ARGUMENT" in os.environ:
             try:
                 from android.permissions import request_permissions, Permission
-                request_permissions([Permission.ACCESS_WIFI_STATE, Permission.CHANGE_WIFI_STATE, Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_NETWORK_STATE, Permission.INTERNET, Permission.WRITE_EXTERNAL_STORAGE, Permission.READ_EXTERNAL_STORAGE])
+                permissions = [
+                    Permission.ACCESS_WIFI_STATE,
+                    Permission.CHANGE_WIFI_STATE,
+                    Permission.ACCESS_FINE_LOCATION,
+                    Permission.ACCESS_NETWORK_STATE,
+                    Permission.INTERNET,
+                    Permission.WRITE_EXTERNAL_STORAGE,
+                    Permission.READ_EXTERNAL_STORAGE
+                ]
+                request_permissions(permissions)
                 self.log("Android permissions requested")
             except Exception as e:
                 self.log("Error requesting permissions: " + str(e))
+                self.show_error_popup("Permission Error", "Could not request necessary permissions. Some features may not work.")
     def open_file_chooser(self, instance):
         content = FileChooserIconView()
         popup = Popup(title="Select Wordlist File", content=content, size_hint=(0.9, 0.9))
@@ -577,15 +591,15 @@ class WiFiCrackApp(App):
     def update_cracking_progress(self, network, current, total, password):
         for item in self.network_items:
             if item.network.ssid == network.ssid:
-                item.set_status("Testing: " + password + " (" + str(current) + "/" + str(total) + ")", False)
+                item.set_status(f"Testing: {password} ({current}/{total})", in_progress=True)
     def update_network_item_success(self, network, password):
         for item in self.network_items:
             if item.network.ssid == network.ssid:
-                item.set_status("Cracked: " + password, True)
+                item.set_status("Cracked: " + password, success=True)
     def update_network_item_failure(self, network):
         for item in self.network_items:
             if item.network.ssid == network.ssid:
-                item.set_status("Failed", False)
+                item.set_status("Failed", success=False)
     def on_stop_pressed(self, instance):
         self.is_cracking = False
         if self.scanner:
