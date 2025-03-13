@@ -66,6 +66,10 @@ class WiFiScanner:
         else:
             self.initialize_standard_wifi(interface_index)
     def initialize_android_wifi(self):
+        if not os.path.exists("/var/run/wpa_supplicant"):
+            self.log("WiFi scanning is not supported on Android in this environment.")
+            self.interface = None
+            return
         if not PYWIFI_AVAILABLE:
             self.log("pywifi not installed. Installing...")
             self.install_pywifi()
@@ -342,12 +346,12 @@ class NetworkItem(BoxLayout):
         self.checkbox = CheckBox(active=False, size_hint_x=None, width=30)
         self.checkbox.bind(active=self.on_checkbox_active)
         self.add_widget(self.checkbox)
-        ssid_label = Label(text=self.ssid, halign='left', valign='middle', size_hint_x=0.6)
+        ssid_label = Label(text=self.ssid, halign='left', valign='middle', size_hint_x=0.6, font_size='18sp')
         ssid_label.bind(size=ssid_label.setter('text_size'))
         self.add_widget(ssid_label)
-        signal_label = Label(text=self.signal, halign='center', valign='middle', size_hint_x=0.2)
+        signal_label = Label(text=self.signal, halign='center', valign='middle', size_hint_x=0.2, font_size='16sp')
         self.add_widget(signal_label)
-        self.status_label = Label(text="", halign='right', valign='middle', size_hint_x=0.2)
+        self.status_label = Label(text="", halign='right', valign='middle', size_hint_x=0.2, font_size='16sp')
         self.add_widget(self.status_label)
         Animation(opacity=1, duration=0.5).start(self)
     def on_checkbox_active(self, checkbox, value):
@@ -375,14 +379,14 @@ class CrackingTask(BoxLayout):
         self.network = network
         self.ssid = network.ssid
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=30)
-        ssid_label = Label(text=self.ssid, halign='left', valign='middle', size_hint_x=0.7, color=get_color_from_hex(Colors.CYAN))
+        ssid_label = Label(text=self.ssid, halign='left', valign='middle', size_hint_x=0.7, font_size='20sp', color=get_color_from_hex(Colors.CYAN))
         ssid_label.bind(size=ssid_label.setter('text_size'))
         header.add_widget(ssid_label)
-        self.status_label = Label(text=self.status, halign='right', valign='middle', size_hint_x=0.3, color=get_color_from_hex(Colors.YELLOW))
+        self.status_label = Label(text=self.status, halign='right', valign='middle', size_hint_x=0.3, font_size='18sp', color=get_color_from_hex(Colors.YELLOW))
         self.status_label.bind(size=self.status_label.setter('text_size'))
         header.add_widget(self.status_label)
         self.add_widget(header)
-        self.password_label = Label(text="", halign='left', valign='middle', color=get_color_from_hex(Colors.GRAY))
+        self.password_label = Label(text="", halign='left', valign='middle', font_size='16sp', color=get_color_from_hex(Colors.GRAY))
         self.password_label.bind(size=self.password_label.setter('text_size'))
         self.add_widget(self.password_label)
         self.progress_bar = ProgressBar(max=100, value=0)
@@ -424,17 +428,17 @@ class WiFiCrackApp(App):
         header.add_widget(self.status_label)
         self.root.add_widget(header)
         log_box = BoxLayout(orientation='vertical', size_hint_y=0.3)
-        log_box.add_widget(Label(text='Log Output', size_hint_y=None, height=30, halign='left', color=get_color_from_hex(Colors.BLUE)))
+        log_box.add_widget(Label(text='Log Output', size_hint_y=None, height=30, halign='left', font_size='18sp', color=get_color_from_hex(Colors.BLUE)))
         self.log_scroll = ScrollView(bar_width=10)
-        self.log_output = Label(text='', halign='left', valign='top', size_hint_y=None, padding=(10, 10))
+        self.log_output = Label(text='', halign='left', valign='top', size_hint_y=None, padding=(10, 10), font_size='16sp')
         self.log_output.bind(size=self.on_log_size)
         self.log_scroll.add_widget(self.log_output)
         log_box.add_widget(self.log_scroll)
         self.root.add_widget(log_box)
         networks_box = BoxLayout(orientation='vertical', size_hint_y=0.4)
         networks_header = BoxLayout(orientation='horizontal', size_hint_y=None, height=30)
-        networks_header.add_widget(Label(text='Available Networks', halign='left', color=get_color_from_hex(Colors.BLUE), size_hint_x=0.7))
-        self.scan_button = Button(text='Scan', size_hint_x=0.3, background_color=get_color_from_hex(Colors.BLUE))
+        networks_header.add_widget(Label(text='Available Networks', halign='left', font_size='20sp', color=get_color_from_hex(Colors.BLUE), size_hint_x=0.7))
+        self.scan_button = Button(text='Scan', size_hint_x=0.3, background_color=get_color_from_hex(Colors.BLUE), font_size='20sp')
         self.scan_button.bind(on_release=self.on_scan_pressed)
         networks_header.add_widget(self.scan_button)
         networks_box.add_widget(networks_header)
@@ -581,7 +585,7 @@ class WiFiCrackApp(App):
         self.stop_button.disabled = True
         self.log("Cracking stopped by user.")
     def show_error_popup(self, title, message):
-        popup = Popup(title=title, content=Label(text=message), size_hint=(None, None), size=(400, 200))
+        popup = Popup(title=title, content=Label(text=message, font_size='18sp'), size_hint=(None, None), size=(400, 200))
         popup.open()
 
 if __name__ == '__main__':
