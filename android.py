@@ -1,3 +1,4 @@
+
 import os
 import platform
 import sys
@@ -80,14 +81,13 @@ class WiFiScanner:
                 self.interface = interfaces[interface_index]
                 self.log(f"Using interface: {self.interface.name()}")
             except IndexError:
-                self.log(f"Interface index {interface_index} is out of range!")
-                self.log("Using default interface (0) instead.")
+                self.log(f"Interface index {interface_index} out of range. Using default interface (0).")
                 self.interface = interfaces[0]
             self.load_previous_attempts()
         except Exception as e:
             self.log(f"Error initializing WiFi: {str(e)}")
             if "PyWiFi only supports Linux and Windows platforms" in str(e):
-                self.log("This script only works on Windows and Linux platforms.")
+                self.log("This script works only on Windows and Linux.")
             elif platform.system() == "Windows":
                 self.log("On Windows, ensure WLAN AutoConfig service is running.")
     def install_pywifi(self):
@@ -98,7 +98,7 @@ class WiFiScanner:
             stdout, stderr = process.communicate()
             if process.returncode != 0:
                 self.log(f"Failed to install pywifi: {stderr.decode()}")
-                self.log("Please install it manually: pip install pywifi")
+                self.log("Install it manually: pip install pywifi")
                 return False
             if platform.system() == "Windows":
                 self.log("Installing comtypes for Windows...")
@@ -121,7 +121,7 @@ class WiFiScanner:
                     self.successful_attempts = json.load(f)
                 self.log(f"Loaded {len(self.successful_attempts)} previously cracked networks")
             except (json.JSONDecodeError, IOError):
-                self.log("Warning: Could not read previous successful attempts")
+                self.log("Could not read previous successful attempts")
         attempts_file = os.path.join(RESULTS_DIR, "attempted_combinations.txt")
         if os.path.exists(attempts_file):
             try:
@@ -132,7 +132,7 @@ class WiFiScanner:
                             self.attempted_passwords.add(f"{network}--{password}")
                 self.log(f"Loaded {len(self.attempted_passwords)} previously attempted combinations")
             except IOError:
-                self.log("Warning: Could not read previous attempt log")
+                self.log("Could not read previous attempt log")
     def save_successful_attempt(self, network, password):
         self.successful_attempts[network] = {"password": password, "timestamp": datetime.now().isoformat()}
         success_file = os.path.join(RESULTS_DIR, "successful_cracks.json")
@@ -140,7 +140,7 @@ class WiFiScanner:
             with open(success_file, 'w') as f:
                 json.dump(self.successful_attempts, f, indent=2)
         except IOError:
-            self.log("Warning: Could not save successful attempt")
+            self.log("Could not save successful attempt")
     def log_attempt(self, network, password):
         attempt_key = f"{network}--{password}"
         self.attempted_passwords.add(attempt_key)
@@ -390,8 +390,11 @@ class WiFiCrackApp(App):
         self.is_cracking = False
     def build(self):
         if "ANDROID_ARGUMENT" in os.environ:
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.ACCESS_WIFI_STATE, Permission.CHANGE_WIFI_STATE, Permission.ACCESS_FINE_LOCATION])
+            try:
+                from android.permissions import request_permissions, Permission
+                request_permissions([Permission.ACCESS_WIFI_STATE, Permission.CHANGE_WIFI_STATE, Permission.ACCESS_FINE_LOCATION])
+            except Exception as e:
+                self.log("Error requesting permissions: " + str(e))
         self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
         header = BoxLayout(orientation='horizontal', size_hint_y=None, height=50)
         title = Label(text='WiFi Crack', color=get_color_from_hex(Colors.CYAN), font_size='24sp', size_hint_x=0.7)
@@ -452,7 +455,7 @@ class WiFiCrackApp(App):
             try:
                 import ctypes
                 if not ctypes.windll.shell32.IsUserAnAdmin():
-                    self.log("Warning: Not running as administrator. Some features may not work. Run as administrator for best results.")
+                    self.log("Warning: Not running as administrator. Run as administrator for best results.")
             except:
                 pass
         elif current_system == "Linux":
