@@ -11,10 +11,15 @@ from kivy.clock import Clock
 import speedtest
 import json
 import time
-import matplotlib.pyplot as plt
-import numpy as np
-from kivy.garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
 import os
+
+# Use regular matplotlib without kivy.garden integration
+# We'll generate images and display them instead
+import matplotlib
+matplotlib.use('Agg')  # Use Agg backend which doesn't require a display
+import matplotlib.pyplot as plt
+from kivy.core.image import Image as CoreImage
+from io import BytesIO
 
 # File to store speed history
 DATA_FILE = "speed_history.json"
@@ -56,8 +61,8 @@ def get_tips(speed):
     else:
         return "Your internet speed is great!"
 
-# Function to plot history
-def plot_speed_history():
+# Function to generate a plot and return it as a Kivy image
+def generate_plot_image():
     try:
         if not os.path.exists(DATA_FILE):
             return None
@@ -76,19 +81,28 @@ def plot_speed_history():
         download_speeds = [entry["download"] for entry in history]
         upload_speeds = [entry["upload"] for entry in history]
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(timestamps, download_speeds, marker='o', label='Download (Mbps)', color='blue')
-        plt.plot(timestamps, upload_speeds, marker='o', label='Upload (Mbps)', color='red')
+        plt.figure(figsize=(8, 4), dpi=100)
+        plt.plot(range(len(timestamps)), download_speeds, marker='o', label='Download (Mbps)', color='blue')
+        plt.plot(range(len(timestamps)), upload_speeds, marker='o', label='Upload (Mbps)', color='red')
         plt.xlabel("Time")
         plt.ylabel("Speed (Mbps)")
-        plt.xticks(rotation=45)
+        plt.xticks(range(len(timestamps)), timestamps, rotation=45)
         plt.legend()
         plt.title("Internet Speed History")
         plt.tight_layout()
         
-        return plt
+        # Save plot to a BytesIO object
+        buf = BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        
+        # Create a Kivy Image from the BytesIO buffer
+        img = CoreImage(buf, ext='png')
+        plt.close()  # Close the figure to free memory
+        
+        return img
     except Exception as e:
-        print(f"Error plotting history: {e}")
+        print(f"Error generating plot: {e}")
         return None
 
 # Kivy UI
@@ -101,12 +115,14 @@ class SpeedTestApp(BoxLayout):
         # Title
         self.add_widget(Label(text="Internet Speed Test", font_size="24sp", bold=True, size_hint=(1, 0.1)))
 
-        # Image
+        # Image container
+        self.image_container = BoxLayout(size_hint=(1, 0.3))
         try:
-            self.add_widget(Image(source="network.png", size_hint=(1, 0.3)))
+            self.image_container.add_widget(Image(source="network.png"))
         except:
             # Fallback if image doesn't exist
-            self.add_widget(Label(text="[Image Placeholder]", size_hint=(1, 0.3)))
+            self.image_container.add_widget(Label(text="[Image Placeholder]"))
+        self.add_widget(self.image_container)
 
         # Button Layout
         button_layout = BoxLayout(orientation='horizontal', size_hint=(1, 0.2), spacing=10)
@@ -149,19 +165,30 @@ class SpeedTestApp(BoxLayout):
             self.test_button.disabled = False
 
     def show_history(self, instance):
-        plt_fig = plot_speed_history()
-        if plt_fig:
-            canvas = FigureCanvasKivyAgg(plt_fig.gcf())
-            popup_content = BoxLayout(orientation='vertical')
-            popup_content.add_widget(canvas)
-            close_button = Button(text="Close", size_hint=(1, 0.1))
-            popup_content.add_widget(close_button)
+        img = generate_plot_image()
+        if img:
+            # Create an Image widget with the plot
+            plot_image = Image(texture=img.texture, size_hint=(1, 0.9))
             
-            popup = Popup(title="Speed History", content=popup_content, size_hint=(0.9, 0.8))
+            # Create content layout for popup
+            content = BoxLayout(orientation='vertical')
+            content.add_widget(plot_image)
+            
+            # Add close button
+            close_button = Button(text="Close", size_hint=(1, 0.1))
+            content.add_widget(close_button)
+            
+            # Create and open popup
+            popup = Popup(title="Speed History", content=content, size_hint=(0.9, 0.8))
             close_button.bind(on_press=popup.dismiss)
             popup.open()
         else:
-            popup = Popup(title="Speed History", content=Label(text="No history available"), size_hint=(0.6, 0.4))
+            # Show a message if no history is available
+            popup = Popup(
+                title="Speed History", 
+                content=Label(text="No history available yet. Run some tests first!"), 
+                size_hint=(0.6, 0.4)
+            )
             popup.open()
 
 class SpeedTestAppMain(App):
